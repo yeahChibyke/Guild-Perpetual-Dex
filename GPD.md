@@ -7,3 +7,9 @@
   - short an asset (BTC)
   - close a position
   - liquidate a user (admin only function)
+
+### Resources
+
+- https://youtu.be/DRZogmD647U?t=11268
+- https://updraft.cyfrin.io/courses/gmx-perpetuals-trading
+- 
