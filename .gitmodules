@@ -1,0 +1,3 @@
+[submodule "orhukl_perp/lib/forge-std"]
+	path = orhukl_perp/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
