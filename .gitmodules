@@ -1,3 +1,6 @@
 [submodule "orhukl_perp/lib/forge-std"]
 	path = orhukl_perp/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "orhukl_perp/lib/openzeppelin-contracts"]
+	path = orhukl_perp/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
