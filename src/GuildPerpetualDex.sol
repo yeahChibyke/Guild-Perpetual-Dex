@@ -12,10 +12,12 @@ contract GuildPerpetualDex is Ownable {
     error GPD__ZeroAmount();
     error GPD__NotAllowed();
 
-    IERC20 iusdc;
-    IERC20 ibtc;
+    IERC20 usd;
+    IERC20 btc;
 
     address admin;
+
+    bool initialized;
 
     modifier onlyAdmin() {
         if (msg.sender != admin) {
@@ -24,23 +26,19 @@ contract GuildPerpetualDex is Ownable {
         _;
     }
 
-    constructor(address _admin, address _collateral, address _asset, uint256 _amount) Ownable(_admin) {
+    constructor(address _admin, address _collateral, address _asset) Ownable(_admin) {
         if (_admin == address(0) || _collateral == address(0) || _asset == address(0)) {
             revert GPD__ZeroAddress();
         }
 
-        if (_amount == 0) {
-            revert GPD__ZeroAmount();
-        }
-
         admin = _admin;
-        iusdc = IERC20(_collateral);
-        ibtc = IERC20(_asset);
-
-        _initializePool(_amount);
+        usd = IERC20(_collateral);
+        btc = IERC20(_asset);
     }
 
-    function _initializePool(uint256 _amount) internal {
-        iusdc.safeTransferFrom(msg.sender, address(this), _amount);
+    function initialize(uint256 _amount) external onlyAdmin returns (bool) {
+        usd.safeTransferFrom(msg.sender, address(this), _amount);
+        initialized = true;
+        return initialized;
     }
 }
