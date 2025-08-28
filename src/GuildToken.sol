@@ -8,7 +8,7 @@ contract GuildToken is ERC20, Ownable {
     error GTK__ZeroAddress();
     error GTK__NotAdmin();
     error GTK__NotVault();
-    // error GTK__VaultNotSet();
+    error GTK__VaultNotSet();
 
     event VaultSet(address indexed vault);
 
