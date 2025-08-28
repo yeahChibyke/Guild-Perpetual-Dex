@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {GuildToken} from "./GuildToken.sol";
+import {IGuildToken} from "./interfaces/IGuildToken.sol";
 
 contract GuildVault is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -19,7 +19,7 @@ contract GuildVault is ReentrancyGuard {
     event GV__Withdrew(address indexed withdrawer, uint256 indexed withdrawal);
 
     IERC20 immutable iAsset;
-    GuildToken immutable iToken;
+    IGuildToken immutable iToken;
     address perp;
     address admin;
     uint256 totalAssets;
@@ -51,7 +51,7 @@ contract GuildVault is ReentrancyGuard {
         }
 
         iAsset = IERC20(_asset);
-        iToken = GuildToken(_token);
+        iToken = IGuildToken(_token);
         admin = _admin;
 
         iToken.setVault(address(this));
