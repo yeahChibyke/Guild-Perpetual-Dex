@@ -4,7 +4,7 @@ out = "out"
 libs = ["lib"]
 
 [lint]
-exclude_lints = ["mixed-case-variable"]
+exclude_lints = ["mixed-case-variable", "unused-import"]
 
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
