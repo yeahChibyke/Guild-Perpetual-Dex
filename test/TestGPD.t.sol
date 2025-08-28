@@ -13,7 +13,10 @@ contract TestGPD is Test {
 
     address admin;
 
-    uint256 LIQUIDITY = 1_000_000; // 1 million
+    uint256 INIT_LIQUIDITY = 1_000_000; // 1 million
+    uint256 POOL;
+    uint256 PREC_6 = 1 ** 6;
+    // uint256 PREC_8 = 1 ** 8;
 
     function setUp() public {
         admin = makeAddr("admin");
@@ -21,12 +24,26 @@ contract TestGPD is Test {
         usdc = new MockUSDC(6);
         wbtc = new MockWBTC(8);
 
-        usdc.mint(admin, LIQUIDITY); // 1 million usdc
+        usdc.mint(admin, INIT_LIQUIDITY); // 1 million usdc
 
         gpd = new GuildPerpetualDex(admin, address(usdc), address(wbtc));
+
+        _initialize();
+
+        POOL = usdc.balanceOf(address(gpd));
     }
 
-    function test_setup() public view {
-        console2.log(usdc.balanceOf(address(gpd)));
+    function test_setup() public {
+        assert(POOL == (INIT_LIQUIDITY * PREC_6));
+        assert(gpd.getPool() == POOL);
+        assert(gpd.getMinSize() == 2);
+        assert(gpd.getMaxSize() == 10);
+    }
+
+    function _initialize() internal {
+        vm.startPrank(admin);
+        usdc.approve(address(gpd), INIT_LIQUIDITY * PREC_6);
+        gpd.initialize(INIT_LIQUIDITY * PREC_6, 2, 10);
+        vm.stopPrank();
     }
 }
