@@ -2,18 +2,21 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IGuildToken} from "./interfaces/IGuildToken.sol";
 import {IGuildVault} from "./interfaces/IGuildVault.sol";
 
 contract GuildPerp is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
+
     error GP__ZeroAddress();
     error GP__ZeroAmount();
-    error GP__SizeNotSet();
     error GP__NotAllowed();
     error GP__SizeError();
     error GP__TradesNotAllowed();
+    error GP__TradesCurrentlyActive();
     error GP__InsufficientLiquidity();
 
     IERC20 iUSD; // collateral token
@@ -25,20 +28,23 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     address admin;
 
     struct Position {
-        uint256 size;
         uint256 collateralAmount;
+        uint256 size;
         bool status; // true for long. false for short
         uint256 entryPrice;
     }
 
     mapping(address trader => Position) positions;
 
-    uint256 minSize;
-    uint256 maxSize;
     uint256 totalLiquidity;
+    uint256 btcRate;
+    uint256 USD_PREC = 1e6;
+    uint256 BTC_PREC = 1e8;
 
-    uint256 constant AT_MIN_SIZE = 1; // all time min size
-    uint256 constant AT_MAX_SIZE = 20; // all time max size
+    uint256 constant MIN_SIZE = 2;
+    uint256 constant MAX_SIZE = 20;
+    uint256 constant MIN_COLLATERAL = 10_000e6;
+    uint256 constant MAX_COLLATERAL = 1_000_000e6;
 
     bool allowed;
 
@@ -46,7 +52,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         address indexed trader, uint256 collateralAmount, uint256 indexed size, bool indexed status
     );
     event GP__PositionClosed(address indexed trader);
-    event GP__SizeSet(uint256 indexed minSize, uint256 indexed maxSize);
+    event GP__BTCRateUpdated(uint256 indexed newRate);
 
     modifier onlyAdmin() {
         if (msg.sender != admin) {
@@ -58,6 +64,13 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     modifier tradesAllowed() {
         if (allowed == false) {
             revert GP__TradesNotAllowed();
+        }
+        _;
+    }
+
+    modifier tradesPaused() {
+        if (allowed == true) {
+            revert GP__TradesCurrentlyActive();
         }
         _;
     }
@@ -86,23 +99,10 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         admin = _admin;
     }
 
-    function setSize(uint256 _minSize, uint256 _maxSize) external onlyAdmin returns (bool) {
-        require(allowed == false, "Pause trades before resetting size!!!");
+    function updateBTCRate(uint256 _newRate) external onlyAdmin tradesPaused {
+        btcRate = (_newRate * BTC_PREC);
 
-        if (_minSize == 0 || _maxSize == 0) {
-            revert GP__ZeroAmount();
-        }
-
-        if (_minSize >= _maxSize || _minSize == AT_MIN_SIZE || _maxSize > AT_MAX_SIZE) {
-            revert GP__SizeError();
-        }
-
-        minSize = _minSize;
-        maxSize = _maxSize;
-
-        emit GP__SizeSet(minSize, maxSize);
-
-        return true;
+        emit GP__BTCRateUpdated(btcRate);
     }
 
     function supplyLiquidity(uint256 _amount) external onlyVault {
@@ -115,5 +115,25 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         }
 
         totalLiquidity -= _amount;
+    }
+
+    function openPosition(uint256 _collateralAmount, uint256 _size, bool _status) external tradesAllowed nonReentrant {
+        if (_collateralAmount == 0 || _size == 0) {
+            revert GP__ZeroAmount();
+        }
+
+        if (_collateralAmount < MIN_COLLATERAL || _collateralAmount > MAX_SIZE || _size < MIN_SIZE || _size > MAX_SIZE)
+        {
+            revert GP__NotAllowed();
+        }
+
+        iUSD.safeTransferFrom(msg.sender, address(this), _collateralAmount);
+
+        positions[msg.sender] =
+            Position({collateralAmount: _collateralAmount, size: _size, status: _status, entryPrice: getBTCRate()});
+    }
+
+    function getBTCRate() public view returns (uint256) {
+        return btcRate;
     }
 }
