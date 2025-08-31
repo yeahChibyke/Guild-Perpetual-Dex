@@ -1,29 +1,47 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
+// ------------------------------------------------------------------
+//                             IMPORTS
+// ------------------------------------------------------------------
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IGuildToken} from "./interfaces/IGuildToken.sol";
 
 contract GuildVault is ReentrancyGuard {
+    // ------------------------------------------------------------------
+    //                               TYPE
+    // ------------------------------------------------------------------
     using SafeERC20 for IERC20;
 
+    // ------------------------------------------------------------------
+    //                              ERRORS
+    // ------------------------------------------------------------------
     error GV__ZeroAddress();
     error GV__ZeroAmount();
     error GV__InvalidShares();
     error GV__InsufficientLiquidity();
 
+    // ------------------------------------------------------------------
+    //                              EVENTS
+    // ------------------------------------------------------------------
     event GV__PerpSet(address indexed perp);
     event GV__Deposited(address indexed depositor, uint256 indexed deposit);
     event GV__Withdrew(address indexed withdrawer, uint256 indexed withdrawal);
 
+    // ------------------------------------------------------------------
+    //                             STORAGE
+    // ------------------------------------------------------------------
     IERC20 immutable iAsset;
     IGuildToken immutable iToken;
-    address perp;
-    address admin;
-    uint256 totalAssets;
+    address private s_perp;
+    address private s_admin;
+    uint256 private s_totalAssets;
 
+    // ------------------------------------------------------------------
+    //                            MODIFIERS
+    // ------------------------------------------------------------------
     modifier notZeroAddress(address _addr) {
         if (_addr == address(0)) {
             revert GV__ZeroAddress();
@@ -45,6 +63,9 @@ contract GuildVault is ReentrancyGuard {
         _;
     }
 
+    // ------------------------------------------------------------------
+    //                           CONSTRUCTOR
+    // ------------------------------------------------------------------
     constructor(address _asset, address _token, address _admin) {
         if (_asset == address(0) || _token == address(0) || _admin == address(0)) {
             revert GV__ZeroAddress();
@@ -52,16 +73,19 @@ contract GuildVault is ReentrancyGuard {
 
         iAsset = IERC20(_asset);
         iToken = IGuildToken(_token);
-        admin = _admin;
+        s_admin = _admin;
 
         iToken.setVault(address(this));
     }
 
+    // ------------------------------------------------------------------
+    //                        EXTERNAL FUNCTIONS
+    // ------------------------------------------------------------------
     function setPerp(address _perp) external notZeroAddress(_perp) {
-        perp = _perp;
+        s_perp = _perp;
         iAsset.safeIncreaseAllowance(_perp, type(uint256).max); // --> thinking of adding onlyAdmin mod here... will it affect this line?
 
-        emit GV__PerpSet(perp);
+        emit GV__PerpSet(s_perp);
     }
 
     function deposit(uint256 _assetAmount) external notZeroAmount(_assetAmount) nonReentrant {
@@ -72,7 +96,7 @@ contract GuildVault is ReentrancyGuard {
         // // supply liquidity to perp contract
         // perp.supplyLiquidity(); --> create interface so I can do IPerp(perp).supplyLiquidity();
 
-        totalAssets += _assetAmount;
+        s_totalAssets += _assetAmount;
 
         iToken.mint(msg.sender, sharesToReceive);
 
@@ -82,14 +106,14 @@ contract GuildVault is ReentrancyGuard {
     function withdraw(uint256 _sharesAmount) external validShares(_sharesAmount) nonReentrant {
         uint256 assetsToReceive = convertToAssets(_sharesAmount);
 
-        if (assetsToReceive >= totalAssets) {
+        if (assetsToReceive >= s_totalAssets) {
             revert GV__InsufficientLiquidity();
         }
 
         // // withdraw from perp if necessary
         // perp.exitLiquidity(); --> create interface so I can do IPerp(perp).exitLiquidity();
 
-        totalAssets -= assetsToReceive;
+        s_totalAssets -= assetsToReceive;
 
         iToken.burn(msg.sender, _sharesAmount);
 
@@ -98,6 +122,9 @@ contract GuildVault is ReentrancyGuard {
         emit GV__Withdrew(msg.sender, assetsToReceive);
     }
 
+    // ------------------------------------------------------------------
+    //                      PUBLIC VIEW FUNCTIONS
+    // ------------------------------------------------------------------
     function convertToShares(uint256 _assetAmount) public view notZeroAmount(_assetAmount) returns (uint256) {
         uint256 supply = iToken.totalSupply();
 
@@ -106,7 +133,7 @@ contract GuildVault is ReentrancyGuard {
         if (supply == 0) {
             sharesToReceive = _assetAmount;
         } else {
-            sharesToReceive = (_assetAmount * supply) / totalAssets;
+            sharesToReceive = (_assetAmount * supply) / s_totalAssets;
         }
 
         return sharesToReceive;
@@ -120,9 +147,25 @@ contract GuildVault is ReentrancyGuard {
         if (supply == 0) {
             assetsToReceive = _sharesAmount;
         } else {
-            assetsToReceive = (_sharesAmount * totalAssets) / supply;
+            assetsToReceive = (_sharesAmount * s_totalAssets) / supply;
         }
 
         return assetsToReceive;
+    }
+
+    // ------------------------------------------------------------------
+    //                         GETTER FUNCTIONS
+    // ------------------------------------------------------------------
+
+    function getPerp() external view returns (address) {
+        return s_perp;
+    }
+
+    function getAdmin() external view returns (address) {
+        return s_admin;
+    }
+
+    function getTotalAssets() external view returns (uint256) {
+        return s_totalAssets;
     }
 }
