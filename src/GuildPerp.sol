@@ -19,40 +19,40 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     error GP__TradesCurrentlyActive();
     error GP__InsufficientLiquidity();
 
-    IERC20 iUSD; // collateral token
-    IERC20 iBTC; // traded token
+    event GP__PositionOpened(
+        address indexed trader, uint256 collateralAmount, uint256 indexed size, bool indexed status
+    );
+    event GP__PositionClosed(address indexed trader);
+    event GP__BTCRateUpdated(uint256 indexed newRate);
 
-    IGuildToken gToken;
-    IGuildVault gVault;
+    IERC20 immutable iUSD; // collateral token
+    IERC20 immutable iBTC; // traded token
 
-    address admin;
-
-    struct Position {
-        uint256 collateralAmount;
-        uint256 size;
-        bool status; // true for long. false for short
-        uint256 entryPrice;
-    }
-
-    mapping(address trader => Position) positions;
-
-    uint256 totalLiquidity;
-    uint256 btcRate;
-    uint256 USD_PREC = 1e6;
-    uint256 BTC_PREC = 1e8;
+    IGuildToken immutable gToken;
+    IGuildVault immutable gVault;
 
     uint256 constant MIN_SIZE = 2;
     uint256 constant MAX_SIZE = 20;
     uint256 constant MIN_COLLATERAL = 10_000e6;
     uint256 constant MAX_COLLATERAL = 1_000_000e6;
 
+    address admin;
+
     bool allowed;
 
-    event GP__PositionOpened(
-        address indexed trader, uint256 collateralAmount, uint256 indexed size, bool indexed status
-    );
-    event GP__PositionClosed(address indexed trader);
-    event GP__BTCRateUpdated(uint256 indexed newRate);
+    uint256 totalLiquidity;
+    uint256 btcRate;
+    uint256 USD_PREC = 1e6;
+    uint256 BTC_PREC = 1e8;
+
+    mapping(address trader => Position) positions;
+
+    struct Position {
+        uint256 collateralAmount;
+        uint256 size;
+        uint256 entryPrice;
+        bool status; // true for long. false for short
+    }
 
     modifier onlyAdmin() {
         if (msg.sender != admin) {
@@ -130,7 +130,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         iUSD.safeTransferFrom(msg.sender, address(this), _collateralAmount);
 
         positions[msg.sender] =
-            Position({collateralAmount: _collateralAmount, size: _size, status: _status, entryPrice: getBTCRate()});
+            Position({collateralAmount: _collateralAmount, size: _size, entryPrice: getBTCRate(), status: _status});
     }
 
     function getBTCRate() public view returns (uint256) {
