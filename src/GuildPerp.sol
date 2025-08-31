@@ -46,8 +46,8 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     IGuildToken immutable gToken;
     IGuildVault immutable gVault;
 
-    uint256 constant MIN_SIZE = 2;
-    uint256 constant MAX_SIZE = 20;
+    uint256 constant MIN_LEVERAGE = 2;
+    uint256 constant MAX_LEVERAGE = 20;
     uint256 constant MIN_COLLATERAL = 10_000e6;
     uint256 constant MAX_COLLATERAL = 1_000_000e6;
 
@@ -66,6 +66,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         uint256 collateralAmount;
         uint256 size;
         uint256 entryPrice;
+        uint256 leverage;
         bool status; // true for long. false for short
     }
 
@@ -155,15 +156,28 @@ contract GuildPerp is ReentrancyGuard, Ownable {
             revert GP__ZeroAmount();
         }
 
-        if (_collateralAmount < MIN_COLLATERAL || _collateralAmount > MAX_SIZE || _size < MIN_SIZE || _size > MAX_SIZE)
-        {
+        uint256 position_leverage = _size / _collateralAmount;
+        uint256 min_position_leverage = _size / MIN_COLLATERAL;
+        uint256 max_position_leverage = _size / MAX_COLLATERAL;
+
+        if (
+            _collateralAmount < MIN_COLLATERAL || _collateralAmount > MAX_COLLATERAL
+                || position_leverage < min_position_leverage || position_leverage > max_position_leverage
+        ) {
             revert GP__NotAllowed();
         }
 
         iUSD.safeTransferFrom(msg.sender, address(this), _collateralAmount);
 
-        positions[msg.sender] =
-            Position({collateralAmount: _collateralAmount, size: _size, entryPrice: getBTCRate(), status: _status});
+        positions[msg.sender] = Position({
+            collateralAmount: _collateralAmount,
+            size: _size,
+            entryPrice: getBTCRate(),
+            leverage: position_leverage,
+            status: _status
+        });
+
+        emit GP__PositionOpened(msg.sender, _collateralAmount, _size, _status);
     }
 
     // ------------------------------------------------------------------
