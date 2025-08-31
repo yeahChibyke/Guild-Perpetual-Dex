@@ -8,6 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IGuildToken} from "./interfaces/IGuildToken.sol";
+import {IGuildPerp} from "./interfaces/IGuildPerp.sol";
 
 contract GuildVault is ReentrancyGuard {
     // ------------------------------------------------------------------
@@ -35,7 +36,8 @@ contract GuildVault is ReentrancyGuard {
     // ------------------------------------------------------------------
     IERC20 immutable iAsset;
     IGuildToken immutable iToken;
-    address private s_perp;
+    IGuildPerp iPerp;
+
     address private s_admin;
     uint256 private s_totalAssets;
 
@@ -82,10 +84,10 @@ contract GuildVault is ReentrancyGuard {
     //                        EXTERNAL FUNCTIONS
     // ------------------------------------------------------------------
     function setPerp(address _perp) external notZeroAddress(_perp) {
-        s_perp = _perp;
+        iPerp = IGuildPerp(_perp);
         iAsset.safeIncreaseAllowance(_perp, type(uint256).max); // --> thinking of adding onlyAdmin mod here... will it affect this line?
 
-        emit GV__PerpSet(s_perp);
+        emit GV__PerpSet(address(iPerp));
     }
 
     function deposit(uint256 _assetAmount) external notZeroAmount(_assetAmount) nonReentrant {
@@ -93,8 +95,8 @@ contract GuildVault is ReentrancyGuard {
 
         iAsset.safeTransferFrom(msg.sender, address(this), _assetAmount);
 
-        // // supply liquidity to perp contract
-        // perp.supplyLiquidity(); --> create interface so I can do IPerp(perp).supplyLiquidity();
+        // supply liquidity to perp contract
+        iPerp.supplyLiquidity(_assetAmount);
 
         s_totalAssets += _assetAmount;
 
@@ -110,8 +112,8 @@ contract GuildVault is ReentrancyGuard {
             revert GV__InsufficientLiquidity();
         }
 
-        // // withdraw from perp if necessary
-        // perp.exitLiquidity(); --> create interface so I can do IPerp(perp).exitLiquidity();
+        // withdraw from perp if necessary
+        iPerp.exitLiquidity(_sharesAmount);
 
         s_totalAssets -= assetsToReceive;
 
@@ -158,7 +160,7 @@ contract GuildVault is ReentrancyGuard {
     // ------------------------------------------------------------------
 
     function getPerp() external view returns (address) {
-        return s_perp;
+        return address(iPerp);
     }
 
     function getAdmin() external view returns (address) {
