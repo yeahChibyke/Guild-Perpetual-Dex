@@ -7,6 +7,8 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {AggregatorV3Interface} from "chainlink-evm/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {OracleChecker} from "./library/OracleChecker.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IGuildToken} from "./interfaces/IGuildToken.sol";
 import {IGuildVault} from "./interfaces/IGuildVault.sol";
@@ -16,6 +18,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     //                               TYPE
     // ------------------------------------------------------------------
     using SafeERC20 for IERC20;
+    using OracleChecker for AggregatorV3Interface;
 
     // ------------------------------------------------------------------
     //                              ERRORS
@@ -51,13 +54,13 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     uint256 constant MIN_COLLATERAL = 10_000e6;
     uint256 constant MAX_COLLATERAL = 1_000_000e6;
     uint256 constant PRECISION = 1e18;
+    uint256 constant ADDITIONAL_FEED_PRECISION = 1e10;
 
     address admin;
 
     bool allowed;
 
     uint256 totalLiquidity;
-    uint256 btcPrice;
     uint256 USD_PREC = 1e6;
     uint256 BTC_PREC = 1e8;
 
@@ -65,6 +68,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     mapping(address trader => Position) positions;
     mapping(uint256 id => Position) positionsById;
     mapping(uint256 id => address trader) ownerOfPositionById;
+    mapping(address btc => address priceFeed) s_priceFeed;
 
     struct Position {
         uint256 collateralAmount;
@@ -116,31 +120,27 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     // ------------------------------------------------------------------
     //                           CONSTRUCTOR
     // ------------------------------------------------------------------
-    constructor(address _collateralToken, address _tradedToken, address _token, address _vault, address _admin)
-        Ownable(_admin)
-    {
+    constructor(
+        address _collateralToken,
+        address _tradedToken,
+        address _token,
+        address _btc_usd_pricefeed,
+        address _vault,
+        address _admin
+    ) Ownable(_admin) {
         if (
-            _collateralToken == address(0) || _tradedToken == address(0) || _token == address(0) || _vault == address(0)
-                || _admin == address(0)
+            _collateralToken == address(0) || _tradedToken == address(0) || _token == address(0)
+                || _btc_usd_pricefeed == address(0) || _vault == address(0) || _admin == address(0)
         ) {
             revert GP__ZeroAddress();
         }
 
         iUSD = IERC20(_collateralToken);
         iBTC = IERC20(_tradedToken);
+        s_priceFeed[_tradedToken] = _btc_usd_pricefeed;
         gToken = IGuildToken(_token);
         gVault = IGuildVault(_vault);
         admin = _admin;
-    }
-
-    // ------------------------------------------------------------------
-    //                   ONLYADMIN EXTERNAL FUNCTIONS
-    // ------------------------------------------------------------------
-
-    function updateBTCRate(uint256 _newRate) external onlyAdmin tradesPaused {
-        btcPrice = (_newRate * BTC_PREC);
-
-        emit GP__BTCPriceUpdated(btcPrice);
     }
 
     // ------------------------------------------------------------------
@@ -162,7 +162,12 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     //                        EXTERNAL FUNCTIONS
     // ------------------------------------------------------------------
 
-    function openPosition(uint256 _collateralAmount, uint256 _size, bool _status) external tradesAllowed nonReentrant returns(uint256) {
+    function openPosition(uint256 _collateralAmount, uint256 _size, bool _status)
+        external
+        tradesAllowed
+        nonReentrant
+        returns (uint256)
+    {
         if (_collateralAmount == 0 || _size == 0) {
             revert GP__ZeroAmount();
         }
@@ -206,8 +211,13 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     // ------------------------------------------------------------------
     //                      PUBLIC VIEW FUNCTIONS
     // ------------------------------------------------------------------
+
     function getBTCPrice() public view returns (uint256) {
-        return btcPrice;
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeed[address(iBTC)]);
+        (, int256 answer,,,) = priceFeed.staleDataCheck();
+        // Most USD pairs have 8 decimals, so we will assume they all do
+        // We want to have everything in terms of wei, so we add 10 zeros at the end
+        return ((uint256(answer) * ADDITIONAL_FEED_PRECISION)) / PRECISION;
     }
 
     function calculatePnL(address _trader) public view notZeroAddress(_trader) returns (int256) {

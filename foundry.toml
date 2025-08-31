@@ -9,6 +9,7 @@ exclude_lints = [
     "unused-import",
     "screaming-snake-case-immutable",
     "mixed-case-function",
+    "screaming-snake-case-const",
 ]
 
 remappings = [
