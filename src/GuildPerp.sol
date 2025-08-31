@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
+// ------------------------------------------------------------------
+//                             IMPORTS
+// ------------------------------------------------------------------
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -9,8 +12,14 @@ import {IGuildToken} from "./interfaces/IGuildToken.sol";
 import {IGuildVault} from "./interfaces/IGuildVault.sol";
 
 contract GuildPerp is ReentrancyGuard, Ownable {
+    // ------------------------------------------------------------------
+    //                               TYPE
+    // ------------------------------------------------------------------
     using SafeERC20 for IERC20;
 
+    // ------------------------------------------------------------------
+    //                              ERRORS
+    // ------------------------------------------------------------------
     error GP__ZeroAddress();
     error GP__ZeroAmount();
     error GP__NotAllowed();
@@ -19,12 +28,18 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     error GP__TradesCurrentlyActive();
     error GP__InsufficientLiquidity();
 
+    // ------------------------------------------------------------------
+    //                              EVENTS
+    // ------------------------------------------------------------------
     event GP__PositionOpened(
         address indexed trader, uint256 collateralAmount, uint256 indexed size, bool indexed status
     );
     event GP__PositionClosed(address indexed trader);
     event GP__BTCRateUpdated(uint256 indexed newRate);
 
+    // ------------------------------------------------------------------
+    //                             STORAGE
+    // ------------------------------------------------------------------
     IERC20 immutable iUSD; // collateral token
     IERC20 immutable iBTC; // traded token
 
@@ -54,6 +69,10 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         bool status; // true for long. false for short
     }
 
+    // ------------------------------------------------------------------
+    //                            MODIFIERS
+    // ------------------------------------------------------------------
+
     modifier onlyAdmin() {
         if (msg.sender != admin) {
             revert GP__NotAllowed();
@@ -82,6 +101,9 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         _;
     }
 
+    // ------------------------------------------------------------------
+    //                           CONSTRUCTOR
+    // ------------------------------------------------------------------
     constructor(address _collateralToken, address _tradedToken, address _token, address _vault, address _admin)
         Ownable(_admin)
     {
@@ -99,12 +121,19 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         admin = _admin;
     }
 
+    // ------------------------------------------------------------------
+    //                   ONLYADMIN EXTERNAL FUNCTIONS
+    // ------------------------------------------------------------------
+
     function updateBTCRate(uint256 _newRate) external onlyAdmin tradesPaused {
         btcRate = (_newRate * BTC_PREC);
 
         emit GP__BTCRateUpdated(btcRate);
     }
 
+    // ------------------------------------------------------------------
+    //                   ONLYVAULT EXTERNAL FUNCTIONS
+    // ------------------------------------------------------------------
     function supplyLiquidity(uint256 _amount) external onlyVault {
         totalLiquidity += _amount;
     }
@@ -116,6 +145,10 @@ contract GuildPerp is ReentrancyGuard, Ownable {
 
         totalLiquidity -= _amount;
     }
+
+    // ------------------------------------------------------------------
+    //                        EXTERNAL FUNCTIONS
+    // ------------------------------------------------------------------
 
     function openPosition(uint256 _collateralAmount, uint256 _size, bool _status) external tradesAllowed nonReentrant {
         if (_collateralAmount == 0 || _size == 0) {
@@ -133,6 +166,9 @@ contract GuildPerp is ReentrancyGuard, Ownable {
             Position({collateralAmount: _collateralAmount, size: _size, entryPrice: getBTCRate(), status: _status});
     }
 
+    // ------------------------------------------------------------------
+    //                      PUBLIC VIEW FUNCTIONS
+    // ------------------------------------------------------------------
     function getBTCRate() public view returns (uint256) {
         return btcRate;
     }
