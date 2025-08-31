@@ -162,7 +162,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     //                        EXTERNAL FUNCTIONS
     // ------------------------------------------------------------------
 
-    function openPosition(uint256 _collateralAmount, uint256 _size, bool _status) external tradesAllowed nonReentrant {
+    function openPosition(uint256 _collateralAmount, uint256 _size, bool _status) external tradesAllowed nonReentrant returns(uint256) {
         if (_collateralAmount == 0 || _size == 0) {
             revert GP__ZeroAmount();
         }
@@ -197,7 +197,11 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         ownerOfPositionById[positionId] = msg.sender;
 
         emit GP__PositionOpened(msg.sender, _collateralAmount, _size, _status, positionId);
+
+        return positionCounter;
     }
+
+    function closePosition() external tradesAllowed nonReentrant {}
 
     // ------------------------------------------------------------------
     //                      PUBLIC VIEW FUNCTIONS
