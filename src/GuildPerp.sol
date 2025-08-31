@@ -32,10 +32,10 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     //                              EVENTS
     // ------------------------------------------------------------------
     event GP__PositionOpened(
-        address indexed trader, uint256 collateralAmount, uint256 indexed size, bool indexed status
+        address indexed trader, uint256 collateralAmount, uint256 indexed size, bool indexed status, uint256 positionId
     );
     event GP__PositionClosed(address indexed trader);
-    event GP__BTCRateUpdated(uint256 indexed newRate);
+    event GP__BTCPriceUpdated(uint256 indexed newRate);
 
     // ------------------------------------------------------------------
     //                             STORAGE
@@ -50,17 +50,21 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     uint256 constant MAX_LEVERAGE = 20;
     uint256 constant MIN_COLLATERAL = 10_000e6;
     uint256 constant MAX_COLLATERAL = 1_000_000e6;
+    uint256 constant PRECISION = 1e18;
 
     address admin;
 
     bool allowed;
 
     uint256 totalLiquidity;
-    uint256 btcRate;
+    uint256 btcPrice;
     uint256 USD_PREC = 1e6;
     uint256 BTC_PREC = 1e8;
 
+    uint256 positionCounter;
     mapping(address trader => Position) positions;
+    mapping(uint256 id => Position) positionsById;
+    mapping(uint256 id => address trader) ownerOfPositionById;
 
     struct Position {
         uint256 collateralAmount;
@@ -102,6 +106,13 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         _;
     }
 
+    modifier notZeroAddress(address _addr) {
+        if (_addr == address(0)) {
+            revert GP__ZeroAddress();
+        }
+        _;
+    }
+
     // ------------------------------------------------------------------
     //                           CONSTRUCTOR
     // ------------------------------------------------------------------
@@ -127,9 +138,9 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     // ------------------------------------------------------------------
 
     function updateBTCRate(uint256 _newRate) external onlyAdmin tradesPaused {
-        btcRate = (_newRate * BTC_PREC);
+        btcPrice = (_newRate * BTC_PREC);
 
-        emit GP__BTCRateUpdated(btcRate);
+        emit GP__BTCPriceUpdated(btcPrice);
     }
 
     // ------------------------------------------------------------------
@@ -169,21 +180,58 @@ contract GuildPerp is ReentrancyGuard, Ownable {
 
         iUSD.safeTransferFrom(msg.sender, address(this), _collateralAmount);
 
-        positions[msg.sender] = Position({
+        Position memory newPosition = Position({
             collateralAmount: _collateralAmount,
             size: _size,
-            entryPrice: getBTCRate(),
+            entryPrice: getBTCPrice(),
             leverage: position_leverage,
             status: _status
         });
 
-        emit GP__PositionOpened(msg.sender, _collateralAmount, _size, _status);
+        // generate new position id
+        uint256 positionId = positionCounter++;
+
+        // update mappings
+        positions[msg.sender] = newPosition;
+        positionsById[positionId] = newPosition;
+        ownerOfPositionById[positionId] = msg.sender;
+
+        emit GP__PositionOpened(msg.sender, _collateralAmount, _size, _status, positionId);
     }
 
     // ------------------------------------------------------------------
     //                      PUBLIC VIEW FUNCTIONS
     // ------------------------------------------------------------------
-    function getBTCRate() public view returns (uint256) {
-        return btcRate;
+    function getBTCPrice() public view returns (uint256) {
+        return btcPrice;
+    }
+
+    function calculatePnL(address _trader) public view notZeroAddress(_trader) returns (int256) {
+        Position memory position = positions[_trader];
+
+        uint256 currentBTCPrice = getBTCPrice();
+        uint256 btcPriceAtEntry = position.entryPrice;
+        uint256 positionSize = position.size;
+        uint256 btcAmount = (positionSize * PRECISION) / btcPriceAtEntry;
+
+        int256 pnl;
+
+        if (position.status) {
+            pnl = int256((currentBTCPrice - btcPriceAtEntry) * btcAmount);
+        } else {
+            pnl = int256((btcPriceAtEntry - currentBTCPrice) * btcAmount);
+        }
+
+        return pnl / int256(PRECISION);
+    }
+
+    function getPositionById(uint256 _id) external view returns (Position memory) {
+        return positionsById[_id];
+    }
+
+    function getOwnerOfPosition(uint256 _id) external view returns (address) {
+        address owner = ownerOfPositionById[_id];
+        require(owner != address(0), "Position does not exist!!!");
+        return owner;
     }
 }
