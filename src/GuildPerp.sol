@@ -10,8 +10,8 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {AggregatorV3Interface} from "chainlink-evm/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleChecker} from "./library/OracleChecker.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {IGuildToken} from "./interfaces/IGuildToken.sol";
-import {IGuildVault} from "./interfaces/IGuildVault.sol";
+import {GuildToken} from "./GuildToken.sol";
+import {GuildVault} from "./GuildVault.sol";
 
 contract GuildPerp is ReentrancyGuard, Ownable {
     // ------------------------------------------------------------------
@@ -46,8 +46,8 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     IERC20 immutable iUSD; // collateral token
     IERC20 immutable iBTC; // traded token
 
-    IGuildToken immutable gToken;
-    IGuildVault immutable gVault;
+    GuildToken immutable gToken;
+    GuildVault immutable gVault;
 
     uint256 constant MIN_LEVERAGE = 2;
     uint256 constant MAX_LEVERAGE = 20;
@@ -138,8 +138,8 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         iUSD = IERC20(_collateralToken);
         iBTC = IERC20(_tradedToken);
         s_priceFeed[_tradedToken] = _btc_usd_pricefeed;
-        gToken = IGuildToken(_token);
-        gVault = IGuildVault(_vault);
+        gToken = GuildToken(_token);
+        gVault = GuildVault(_vault);
         admin = _admin;
     }
 

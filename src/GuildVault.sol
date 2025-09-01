@@ -7,8 +7,8 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IGuildToken} from "./interfaces/IGuildToken.sol";
-import {IGuildPerp} from "./interfaces/IGuildPerp.sol";
+import {GuildToken} from "./GuildToken.sol";
+import {GuildPerp} from "./GuildPerp.sol";
 
 contract GuildVault is ReentrancyGuard {
     // ------------------------------------------------------------------
@@ -35,8 +35,8 @@ contract GuildVault is ReentrancyGuard {
     //                             STORAGE
     // ------------------------------------------------------------------
     IERC20 immutable iAsset;
-    IGuildToken immutable iToken;
-    IGuildPerp iPerp;
+    GuildToken immutable iToken;
+    GuildPerp iPerp;
 
     address private s_admin;
     uint256 private s_totalAssets;
@@ -74,7 +74,7 @@ contract GuildVault is ReentrancyGuard {
         }
 
         iAsset = IERC20(_asset);
-        iToken = IGuildToken(_token);
+        iToken = GuildToken(_token);
         s_admin = _admin;
 
         iToken.setVault(address(this));
@@ -84,7 +84,7 @@ contract GuildVault is ReentrancyGuard {
     //                        EXTERNAL FUNCTIONS
     // ------------------------------------------------------------------
     function setPerp(address _perp) external notZeroAddress(_perp) {
-        iPerp = IGuildPerp(_perp);
+        iPerp = GuildPerp(_perp);
         iAsset.safeIncreaseAllowance(_perp, type(uint256).max); // --> thinking of adding onlyAdmin mod here... will it affect this line?
 
         emit GV__PerpSet(address(iPerp));

@@ -3,8 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Script} from "forge-std/Script.sol";
 import {GuildPerp} from "../src/GuildPerp.sol";
-import {IGuildToken} from "../src/interfaces/IGuildToken.sol";
-import {IGuildVault} from "../src/interfaces/IGuildVault.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 import {MockUSDC} from "../test/mocks/MockUSDC.sol";
 
