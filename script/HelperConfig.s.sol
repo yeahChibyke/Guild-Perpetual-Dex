@@ -30,7 +30,7 @@ contract HelperConfig is Script {
         return NetworkConfig({
             btcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
             wBtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
-            deployerKey: vm.envUint("ANVIL_PRIVATE_KEY")
+            deployerKey: vm.envUint("PRIVATE_KEY")
         });
     }
 

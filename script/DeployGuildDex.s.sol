@@ -29,6 +29,7 @@ contract DeployGuildDex is Script {
         gPerp = new GuildPerp(address(usdc), wbtc, token, btcUsdPriceFeed, vault, admin);
         gToken = new GuildToken(admin);
         gVault = new GuildVault(address(usdc), address(gToken), admin);
+        // gToken.transferOwnership(address(gVault));
         vm.stopBroadcast();
 
         return (gPerp, gToken, gVault);
