@@ -20,13 +20,13 @@ contract HelperConfig is Script {
 
     constructor() {
         if (block.chainid == 1_115_511) {
-            activeNetworkConfig = getSepoliaEthConfig();
+            activeNetworkConfig = getSepoliaBTCConfig();
         } else {
-            activeNetworkConfig = getAnvilEthConfig();
+            activeNetworkConfig = getAnvilBTCConfig();
         }
     }
 
-    function getSepoliaEthConfig() public view returns (NetworkConfig memory) {
+    function getSepoliaBTCConfig() public view returns (NetworkConfig memory) {
         return NetworkConfig({
             btcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
             wBtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
@@ -34,7 +34,7 @@ contract HelperConfig is Script {
         });
     }
 
-    function getAnvilEthConfig() public returns (NetworkConfig memory anvilNetworkConfig) {
+    function getAnvilBTCConfig() public returns (NetworkConfig memory anvilNetworkConfig) {
         if (activeNetworkConfig.btcUsdPriceFeed != address(0)) {
             return activeNetworkConfig;
         }

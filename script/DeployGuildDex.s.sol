@@ -12,7 +12,7 @@ contract DeployGuildDex is Script {
     GuildPerp gPerp;
     GuildToken gToken;
     GuildVault gVault;
-    HelperConfig config;
+    HelperConfig public config;
     MockUSDC usdc;
 
     address token = makeAddr("Guild Token");

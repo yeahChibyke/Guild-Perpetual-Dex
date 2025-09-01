@@ -77,7 +77,7 @@ contract GuildVault is ReentrancyGuard {
         iToken = GuildToken(_token);
         s_admin = _admin;
 
-        iToken.setVault(address(this));
+        // iToken.setVault(address(this));
     }
 
     // ------------------------------------------------------------------
