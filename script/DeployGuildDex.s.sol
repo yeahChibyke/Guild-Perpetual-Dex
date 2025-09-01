@@ -8,7 +8,7 @@ import {GuildVault} from "../src/GuildVault.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 import {MockUSDC} from "../test/mocks/MockUSDC.sol";
 
-contract DeployGuildPerp is Script {
+contract DeployGuildDex is Script {
     GuildPerp gPerp;
     GuildToken gToken;
     GuildVault gVault;
