@@ -12,4 +12,3 @@
 
 - https://youtu.be/DRZogmD647U?t=11268
 - https://updraft.cyfrin.io/courses/gmx-perpetuals-trading
-- 
