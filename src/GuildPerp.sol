@@ -214,7 +214,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
 
     function getBTCPrice() public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeed[address(iBTC)]);
-        (, int256 answer,,,) = priceFeed.staleDataCheck();
+        (, int256 answer,,,) = priceFeed.latestRoundData();
         // Most USD pairs have 8 decimals, so we will assume they all do
         // We want to have everything in terms of wei, so we add 10 zeros at the end
         return ((uint256(answer) * ADDITIONAL_FEED_PRECISION)) / PRECISION;
