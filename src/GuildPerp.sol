@@ -330,6 +330,8 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         emit GP__TradingFeeCollected(msg.sender, feeAmount, minutesOpen);
     }
 
+    function liquidate() external {} // should this be automatic (handled by the protocol), or manual(allow other users to act on this)?
+
     // ------------------------------------------------------------------
     //                      ADMIN FUNCTIONS
     // ------------------------------------------------------------------
