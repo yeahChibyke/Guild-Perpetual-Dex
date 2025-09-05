@@ -9,29 +9,55 @@ import {HelperConfig} from "./HelperConfig.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 contract DeployGuildDex is Script {
-    GuildPerp gPerp;
-    GuildToken gToken;
-    GuildVault gVault;
-    HelperConfig public config;
+    GuildPerp gperp;
+    GuildToken gtoken;
+    GuildVault gvault;
+    HelperConfig config;
     ERC20Mock usdc;
+    ERC20Mock wbtc;
 
-    address token = makeAddr("Guild Token");
-    address vault = makeAddr("Guild Vault");
-    address admin = makeAddr("Admin");
+    address admin;
+    address priceFeed;
+    address usdcAddr;
+    address wbtcAddr;
 
-    function run() external returns (GuildPerp, GuildToken, GuildVault) {
-        usdc = new ERC20Mock();
+    function run() external returns (GuildToken, GuildVault, GuildPerp, HelperConfig) {
+        return deployPerp();
+    }
 
+    function deployPerp() public returns (GuildToken, GuildVault, GuildPerp, HelperConfig) {
+        admin = makeAddr("Admin");
         config = new HelperConfig();
-        (address btcUsdPriceFeed, address wbtc, uint256 deployerKey) = config.activeNetworkConfig();
+        HelperConfig.NetworkConfig memory networkConfig = config.getConfigByChainId(block.chainid);
+        priceFeed = networkConfig.priceFeed;
+        usdcAddr = networkConfig.usdc;
+        wbtcAddr = networkConfig.wBtc;
 
-        vm.startBroadcast(deployerKey);
-        gPerp = new GuildPerp(address(usdc), wbtc, token, btcUsdPriceFeed, vault, admin);
-        gToken = new GuildToken(admin);
-        gVault = new GuildVault(address(usdc), address(gToken), admin);
-        // gToken.transferOwnership(address(gVault));
+        usdc = ERC20Mock(usdcAddr);
+        wbtc = ERC20Mock(wbtcAddr);
+
+        vm.startBroadcast();
+        gtoken = new GuildToken(admin);
+        gvault = new GuildVault(address(usdc), address(gtoken), admin);
+        gperp = new GuildPerp(address(usdc), address(wbtc), address(gtoken), priceFeed, address(gvault), admin);
         vm.stopBroadcast();
 
-        return (gPerp, gToken, gVault);
+        return (gtoken, gvault, gperp, config);
+    }
+
+    function getUsdc() external view returns (ERC20Mock) {
+        return usdc;
+    }
+
+    function getWbtc() external view returns (ERC20Mock) {
+        return wbtc;
+    }
+
+    function getAdmin() external view returns (address) {
+        return admin;
+    }
+
+    function getPriceFeed() external view returns (address) {
+        return priceFeed;
     }
 }

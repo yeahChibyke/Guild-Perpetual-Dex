@@ -6,34 +6,34 @@ import {DeployGuildDex} from "../../script/DeployGuildDex.s.sol";
 import {GuildPerp} from "../../src/GuildPerp.sol";
 import {GuildToken} from "../../src/GuildToken.sol";
 import {GuildVault} from "../../src/GuildVault.sol";
-import {HelperConfig} from "../../script/HelperConfig.s.sol";
-import {MockUSDC} from "../mocks/MockUSDC.sol";
-import {MockWBTC} from "../mocks/MockWBTC.sol";
+import {HelperConfig, CodeConstants} from "../../script/HelperConfig.s.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 contract TestGuildDex is Test {
     DeployGuildDex deployer;
-    GuildPerp gPerp;
-    GuildToken gToken;
-    GuildVault gVault;
-    HelperConfig helper;
-    MockUSDC usdc;
-    MockWBTC wbtc;
-
+    GuildPerp gperp;
+    GuildToken gtoken;
+    GuildVault gvault;
+    HelperConfig config;
+    ERC20Mock usdc;
+    ERC20Mock wbtc;
+    address admin;
     address priceFeed;
-    address btc;
-    uint256 key;
 
     function setUp() public {
         deployer = new DeployGuildDex();
-        (gPerp, gToken, gVault) = deployer.run();
-        helper = deployer.config();
-        (priceFeed, btc, key) = helper.activeNetworkConfig();
+        (gtoken, gvault, gperp, config) = deployer.deployPerp();
+        usdc = deployer.getUsdc();
+        wbtc = deployer.getWbtc();
+        admin = deployer.getAdmin();
+        priceFeed = deployer.getPriceFeed();
 
-        usdc = new MockUSDC(6);
-        wbtc = MockWBTC(btc);
+        gtoken = new GuildToken(admin);
+        gvault = new GuildVault(address(usdc), address(gtoken), admin);
+        gperp = new GuildPerp(address(usdc), address(wbtc), address(gtoken), priceFeed, address(gvault), admin);
     }
 
     function testStuff() public view {
-        console2.log(gPerp.getBTCPrice());
+        console2.log(gperp.getBTCPrice());
     }
 }
