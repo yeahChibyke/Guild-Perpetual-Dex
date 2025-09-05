@@ -35,6 +35,9 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     error GP__PositionAlreadyExists();
     error GP__NoPositionFound();
     error GP__InvalidCollateralAmount();
+    error GP__CannotLiquidateSelf();
+    error GP__PositionNotLiquidatable();
+    error GP__LiquidationThresholdNotMet();
 
     // ------------------------------------------------------------------
     //                              EVENTS
@@ -43,6 +46,13 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         address indexed trader, uint256 collateralAmount, uint256 indexed size, bool indexed status, uint256 positionId
     );
     event GP__PositionClosed(address indexed trader, int256 pnl, uint256 feeAmount);
+    event GP__PositionLiquidated(
+        address indexed trader, 
+        address indexed liquidator, 
+        int256 pnl, 
+        uint256 liquidationReward, 
+        uint256 feeAmount
+    );
     event GP__BTCPriceUpdated(uint256 indexed newRate);
     event GP__TradingFeeCollected(address indexed trader, uint256 feeAmount, uint256 minutesOpen);
     event GP__TradingAllowedToggled(bool newStatus);
@@ -68,6 +78,11 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     uint256 constant PRICE_PRECISION = 1e8; // BTC price precision (8 decimals from Chainlink)
     uint256 constant USD_PRECISION = 1e6; // USDC precision (6 decimals)
     uint256 constant SECONDS_PER_MINUTE = 60;
+    
+    // Liquidation constants
+    uint256 constant LIQUIDATION_THRESHOLD = 90; // 90% of collateral lost triggers liquidation
+    uint256 constant LIQUIDATION_REWARD_PERCENTAGE = 5; // 5% reward for liquidator
+    uint256 constant LIQUIDATION_PERCENTAGE_PRECISION = 100;
 
     address admin;
     bool allowed;
@@ -152,6 +167,13 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         _;
     }
 
+    modifier cannotLiquidateSelf(address _trader) {
+        if (msg.sender == _trader) {
+            revert GP__CannotLiquidateSelf();
+        }
+        _;
+    }
+
     // ------------------------------------------------------------------
     //                           CONSTRUCTOR
     // ------------------------------------------------------------------
@@ -218,7 +240,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         // Calculate leverage with proper precision
         // leverage = (size * PRECISION) / collateralAmount
         uint256 positionLeverage = (_size * PRECISION) / _collateralAmount;
-
+        
         // Check leverage bounds
         if (positionLeverage < MIN_LEVERAGE) {
             revert GP__LeverageTooLow();
@@ -330,7 +352,95 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         emit GP__TradingFeeCollected(msg.sender, feeAmount, minutesOpen);
     }
 
-    function liquidate() external {} // should this be automatic (handled by the protocol), or manual(allow other users to act on this)?
+    /**
+     * @notice Liquidate a position that has reached the liquidation threshold
+     * @param _trader The address of the trader whose position is being liquidated
+     * @dev Cannot liquidate your own position. Position must be liquidatable based on PnL and collateral.
+     */
+    function liquidatePosition(address _trader) 
+        external 
+        tradesAllowed 
+        nonReentrant 
+        positionExists(_trader)
+        cannotLiquidateSelf(_trader)
+    {
+        Position memory position = positions[_trader];
+        
+        // Calculate current PnL
+        int256 pnl = calculatePnL(_trader);
+        
+        // Check if position is actually liquidatable
+        if (!isPositionLiquidatable(_trader)) {
+            revert GP__PositionNotLiquidatable();
+        }
+
+        uint256 positionValue = position.collateralAmount;
+
+        // Apply PnL to position value
+        if (pnl >= 0) {
+            // Position is profitable, should not be liquidatable
+            revert GP__LiquidationThresholdNotMet();
+        }
+
+        uint256 loss = uint256(-pnl);
+        if (loss < positionValue) {
+            positionValue -= loss;
+        } else {
+            positionValue = 0; // Complete loss
+        }
+
+        // Calculate trading fee based on time
+        uint256 openTime = positionOpenTime[_trader];
+        uint256 timeOpen = block.timestamp - openTime;
+        uint256 minutesOpen = timeOpen / SECONDS_PER_MINUTE;
+
+        // Calculate fee: (original collateral * tradingFeePerMinute * minutesOpen) / FEE_PRECISION
+        uint256 feeAmount = (position.collateralAmount * tradingFeePerMinute * minutesOpen) / FEE_PRECISION;
+
+        // Calculate liquidation reward (percentage of original collateral)
+        uint256 liquidationReward = (position.collateralAmount * LIQUIDATION_REWARD_PERCENTAGE) / LIQUIDATION_PERCENTAGE_PRECISION;
+
+        // Ensure total deductions don't exceed available value
+        uint256 totalDeductions = feeAmount + liquidationReward;
+        if (totalDeductions > positionValue) {
+            // Scale down proportionally if not enough value
+            if (positionValue > 0) {
+                feeAmount = (positionValue * feeAmount) / totalDeductions;
+                liquidationReward = (positionValue * liquidationReward) / totalDeductions;
+            } else {
+                feeAmount = 0;
+                liquidationReward = 0;
+            }
+        }
+
+        uint256 remainingValue = positionValue - feeAmount - liquidationReward;
+
+        // Update vault liquidity - trader loss = vault gain
+        totalLiquidity += uint256(-pnl);
+
+        // Transfer fee to vault if any
+        if (feeAmount > 0) {
+            iUSD.safeTransfer(address(gVault), feeAmount);
+            totalLiquidity += feeAmount; // Fees go to vault liquidity
+        }
+
+        // Transfer liquidation reward to liquidator
+        if (liquidationReward > 0) {
+            iUSD.safeTransfer(msg.sender, liquidationReward);
+        }
+
+        // Transfer any remaining value back to the original trader
+        if (remainingValue > 0) {
+            iUSD.safeTransfer(_trader, remainingValue);
+        }
+
+        // Clear position data
+        delete positions[_trader];
+        delete positionOpenTime[_trader];
+
+        emit GP__PositionLiquidated(_trader, msg.sender, pnl, liquidationReward, feeAmount);
+        emit GP__TradingFeeCollected(_trader, feeAmount, minutesOpen);
+    }
 
     // ------------------------------------------------------------------
     //                      ADMIN FUNCTIONS
@@ -358,14 +468,14 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     function getBTCPrice() public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeed[address(iBTC)]);
         (, int256 answer,,,) = priceFeed.staleDataCheck();
-
+        
         // Convert Chainlink price (8 decimals) to our standard (8 decimals for BTC price)
         return uint256(answer);
     }
 
     function calculatePnL(address _trader) public view notZeroAddress(_trader) returns (int256) {
         Position memory position = positions[_trader];
-
+        
         if (!position.exists) {
             return 0;
         }
@@ -377,13 +487,11 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         // Calculate PnL with proper precision
         // For long positions: PnL = (currentPrice - entryPrice) * (positionSize / entryPrice)
         // For short positions: PnL = (entryPrice - currentPrice) * (positionSize / entryPrice)
-
+        
         int256 priceDiff;
-        if (position.status) {
-            // Long position
+        if (position.status) { // Long position
             priceDiff = int256(currentBTCPrice) - int256(entryPrice);
-        } else {
-            // Short position
+        } else { // Short position
             priceDiff = int256(entryPrice) - int256(currentBTCPrice);
         }
 
@@ -392,6 +500,31 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         int256 pnl = (priceDiff * int256(positionSize)) / int256(entryPrice);
 
         return pnl;
+    }
+
+    /**
+     * @notice Check if a position can be liquidated
+     * @param _trader The trader's address to check
+     * @return bool True if the position can be liquidated
+     */
+    function isPositionLiquidatable(address _trader) public view returns (bool) {
+        Position memory position = positions[_trader];
+        
+        if (!position.exists) {
+            return false;
+        }
+
+        int256 pnl = calculatePnL(_trader);
+        
+        // Position is liquidatable if loss is >= 90% of collateral
+        if (pnl >= 0) {
+            return false; // Cannot liquidate profitable positions
+        }
+
+        uint256 loss = uint256(-pnl);
+        uint256 liquidationThreshold = (position.collateralAmount * LIQUIDATION_THRESHOLD) / LIQUIDATION_PERCENTAGE_PRECISION;
+        
+        return loss >= liquidationThreshold;
     }
 
     function getPositionById(uint256 _id) external view returns (Position memory) {
@@ -434,26 +567,49 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     // Calculate liquidation price for a position
     function getLiquidationPrice(address _trader) external view returns (uint256) {
         Position memory position = positions[_trader];
-
+        
         if (!position.exists) {
             return 0;
         }
 
-        // Liquidation occurs when losses equal the collateral
-        // For long: liquidationPrice = entryPrice * (1 - collateral/size)
-        // For short: liquidationPrice = entryPrice * (1 + collateral/size)
-
-        uint256 collateralRatio = (position.collateralAmount * PRICE_PRECISION) / position.size;
-
-        if (position.status) {
-            // Long position
+        // Liquidation occurs when losses equal 90% of collateral
+        uint256 liquidationCollateral = (position.collateralAmount * LIQUIDATION_THRESHOLD) / LIQUIDATION_PERCENTAGE_PRECISION;
+        uint256 collateralRatio = (liquidationCollateral * PRICE_PRECISION) / position.size;
+        
+        if (position.status) { // Long position
             if (collateralRatio >= PRICE_PRECISION) {
                 return 0; // Cannot be liquidated
             }
             return (position.entryPrice * (PRICE_PRECISION - collateralRatio)) / PRICE_PRECISION;
-        } else {
-            // Short position
+        } else { // Short position
             return (position.entryPrice * (PRICE_PRECISION + collateralRatio)) / PRICE_PRECISION;
         }
+    }
+
+    /**
+     * @notice Get the current health of a position (percentage of collateral remaining)
+     * @param _trader The trader's address
+     * @return uint256 Health percentage (100 = healthy, 0 = liquidated)
+     */
+    function getPositionHealth(address _trader) external view returns (uint256) {
+        Position memory position = positions[_trader];
+        
+        if (!position.exists) {
+            return 0;
+        }
+
+        int256 pnl = calculatePnL(_trader);
+        
+        if (pnl >= 0) {
+            return 100; // Profitable position is healthy
+        }
+
+        uint256 loss = uint256(-pnl);
+        if (loss >= position.collateralAmount) {
+            return 0; // Complete loss
+        }
+
+        uint256 remainingCollateral = position.collateralAmount - loss;
+        return (remainingCollateral * 100) / position.collateralAmount;
     }
 }
