@@ -20,6 +20,10 @@ contract TestGuildDex is Test {
     address admin;
     address priceFeed;
 
+    address alice;
+    address bob;
+    address clara;
+
     function setUp() public {
         deployer = new DeployGuildDex();
         (gtoken, gvault, gperp, config) = deployer.deployPerp();
@@ -31,6 +35,43 @@ contract TestGuildDex is Test {
         gtoken = new GuildToken(admin);
         gvault = new GuildVault(address(usdc), address(gtoken), admin);
         gperp = new GuildPerp(address(usdc), address(wbtc), address(gtoken), priceFeed, address(gvault), admin);
+
+        vm.startPrank(admin);
+        gtoken.setVault(address(gvault));
+        gvault.setPerp(address(gperp));
+        vm.stopPrank();
+
+        alice = makeAddr("alice");
+        bob = makeAddr("bob");
+        clara = makeAddr("clara");
+
+        usdc.mint(alice, 100_000e6);
+        usdc.mint(bob, 50_000e6);
+        usdc.mint(clara, 10_000e6);
+    }
+
+    function test_gtoken_get_admin() public view {
+        assert(gtoken.getAdmin() == admin);
+    }
+
+    function test_gtoken_get_vault() public view {
+        assert(gtoken.getVault() == address(gvault));
+    }
+
+    function test_gvault_deposit() public {
+        vm.startPrank(alice);
+        usdc.approve(address(gvault), 100_000e6);
+        gvault.deposit(100_000e6);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        usdc.approve(address(gvault), 100_000e6);
+        gvault.deposit(50_000e6);
+        vm.stopPrank();
+
+        console2.log(gtoken.balanceOf(alice));
+        console2.log(gtoken.balanceOf(bob));
+        console2.log(gtoken.getTotalSupply());
     }
 
     function test_get_price() public view {

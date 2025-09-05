@@ -88,4 +88,8 @@ contract GuildToken is ERC20, Ownable {
     function getVault() external view returns (address) {
         return s_vault;
     }
+
+    function getTotalSupply() external view returns (uint256) {
+        return totalSupply();
+    }
 }

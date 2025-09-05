@@ -7,6 +7,7 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {GuildToken} from "./GuildToken.sol";
 import {GuildPerp} from "./GuildPerp.sol";
 
@@ -15,10 +16,12 @@ contract GuildVault is ReentrancyGuard {
     //                               TYPE
     // ------------------------------------------------------------------
     using SafeERC20 for IERC20;
+    using Math for uint256;
 
     // ------------------------------------------------------------------
     //                              ERRORS
     // ------------------------------------------------------------------
+    error GV__NotAdmin();
     error GV__ZeroAddress();
     error GV__ZeroAmount();
     error GV__InvalidShares();
@@ -65,6 +68,13 @@ contract GuildVault is ReentrancyGuard {
         _;
     }
 
+    modifier onlyAdmin() {
+        if (msg.sender != s_admin) {
+            revert GV__NotAdmin();
+        }
+        _;
+    }
+
     // ------------------------------------------------------------------
     //                           CONSTRUCTOR
     // ------------------------------------------------------------------
@@ -76,14 +86,12 @@ contract GuildVault is ReentrancyGuard {
         iAsset = IERC20(_asset);
         iToken = GuildToken(_token);
         s_admin = _admin;
-
-        // iToken.setVault(address(this));
     }
 
     // ------------------------------------------------------------------
     //                        EXTERNAL FUNCTIONS
     // ------------------------------------------------------------------
-    function setPerp(address _perp) external notZeroAddress(_perp) {
+    function setPerp(address _perp) external notZeroAddress(_perp) onlyAdmin {
         iPerp = GuildPerp(_perp);
         iAsset.safeIncreaseAllowance(_perp, type(uint256).max); // --> thinking of adding onlyAdmin mod here... will it affect this line?
 
@@ -127,32 +135,37 @@ contract GuildVault is ReentrancyGuard {
     // ------------------------------------------------------------------
     //                      PUBLIC VIEW FUNCTIONS
     // ------------------------------------------------------------------
-    function convertToShares(uint256 _assetAmount) public view notZeroAmount(_assetAmount) returns (uint256) {
+
+    function convertToShares(uint256 _assetAmount) public view returns (uint256) {
+        return _convertToShares(_assetAmount, Math.Rounding.Floor);
+    }
+
+    function convertToAssets(uint256 _sharesAmount) public view returns (uint256) {
+        return _convertToAssets(_sharesAmount, Math.Rounding.Floor);
+    }
+
+    // internal view functions
+
+    function _convertToShares(uint256 _assetAmount, Math.Rounding rounding) internal view returns (uint256) {
         uint256 supply = iToken.totalSupply();
+        uint256 assets = s_totalAssets;
 
-        uint256 sharesToReceive;
-
-        if (supply == 0) {
-            sharesToReceive = _assetAmount;
-        } else {
-            sharesToReceive = (_assetAmount * supply) / s_totalAssets;
-        }
+        uint256 sharesToReceive = _assetAmount.mulDiv(supply + 10 ** _decimalsOffset(), assets + 1, rounding);
 
         return sharesToReceive;
     }
 
-    function convertToAssets(uint256 _sharesAmount) public view notZeroAmount(_sharesAmount) returns (uint256) {
+    function _convertToAssets(uint256 _sharesAmount, Math.Rounding rounding) internal view returns (uint256) {
         uint256 supply = iToken.totalSupply();
+        uint256 assets = s_totalAssets;
 
-        uint256 assetsToReceive;
-
-        if (supply == 0) {
-            assetsToReceive = _sharesAmount;
-        } else {
-            assetsToReceive = (_sharesAmount * s_totalAssets) / supply;
-        }
+        uint256 assetsToReceive = _sharesAmount.mulDiv(assets + 1, supply + 10 ** _decimalsOffset(), rounding);
 
         return assetsToReceive;
+    }
+
+    function _decimalsOffset() internal pure returns (uint8) {
+        return 0;
     }
 
     // ------------------------------------------------------------------

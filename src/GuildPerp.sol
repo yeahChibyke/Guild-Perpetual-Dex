@@ -39,6 +39,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     );
     event GP__PositionClosed(address indexed trader);
     event GP__BTCPriceUpdated(uint256 indexed newRate);
+    event GP__TradingFeeCollected(address indexed trader, uint256 feeAmount, uint256 minutesOpen);
 
     // ------------------------------------------------------------------
     //                             STORAGE
@@ -55,6 +56,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     uint256 constant MAX_COLLATERAL = 1_000_000e6;
     uint256 constant PRECISION = 1e18;
     uint256 constant ADDITIONAL_FEED_PRECISION = 1e10;
+    uint256 constant FEE_PRECISION = 100000;
 
     address admin;
 
@@ -63,11 +65,14 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     uint256 totalLiquidity;
     uint256 USD_PREC = 1e6;
     uint256 BTC_PREC = 1e8;
+    uint256 tradingFeePerMinute = 1; // 0.001% per minute
 
     uint256 positionCounter;
     mapping(address trader => Position) positions;
     mapping(uint256 id => Position) positionsById;
     mapping(uint256 id => address trader) ownerOfPositionById;
+    mapping(address => uint256) public positionOpenTime;
+    mapping(uint256 => uint256) public positionOpenTimeById;
     mapping(address btc => address priceFeed) s_priceFeed;
 
     struct Position {
@@ -201,12 +206,70 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         positionsById[positionId] = newPosition;
         ownerOfPositionById[positionId] = msg.sender;
 
+        uint256 currentTime = block.timestamp;
+        positionOpenTime[msg.sender] = currentTime;
+        positionOpenTimeById[positionId] = currentTime;
+
         emit GP__PositionOpened(msg.sender, _collateralAmount, _size, _status, positionId);
 
         return positionCounter;
     }
 
-    function closePosition() external tradesAllowed nonReentrant {}
+    function closePosition() external tradesAllowed nonReentrant {
+        Position memory position = positions[msg.sender];
+
+        // Check if position exists
+        if (position.collateralAmount == 0) {
+            revert GP__ZeroAmount();
+        }
+
+        // Calculate PnL
+        int256 pnl = calculatePnL(msg.sender);
+        uint256 positionValue = position.collateralAmount;
+
+        // Apply PnL to position value
+        if (pnl > 0) {
+            positionValue += uint256(pnl);
+        } else if (pnl < 0) {
+            uint256 loss = uint256(-pnl);
+            if (loss > positionValue) {
+                positionValue = 0; // Complete loss
+            } else {
+                positionValue -= loss;
+            }
+        }
+
+        // Calculate trading fee based on time
+        uint256 openTime = positionOpenTime[msg.sender];
+        uint256 timeOpen = block.timestamp - openTime;
+        uint256 minutesOpen = timeOpen / 60; // Convert seconds to minutes
+
+        // Calculate fee: (tradingFeePerMinute * minutesOpen) / FEE_PRECISION
+        uint256 feeAmount = (positionValue * tradingFeePerMinute * minutesOpen) / FEE_PRECISION;
+
+        // Ensure fee doesn't exceed position value
+        if (feeAmount > positionValue) {
+            feeAmount = positionValue;
+        }
+
+        uint256 amountToReturn = positionValue - feeAmount;
+
+        // Transfer fee to vault and remaining to trader
+        if (feeAmount > 0) {
+            iUSD.safeTransfer(address(gVault), feeAmount);
+        }
+
+        if (amountToReturn > 0) {
+            iUSD.safeTransfer(msg.sender, amountToReturn);
+        }
+
+        // Clear position data
+        delete positions[msg.sender];
+        delete positionOpenTime[msg.sender];
+
+        emit GP__PositionClosed(msg.sender);
+        emit GP__TradingFeeCollected(msg.sender, feeAmount, timeOpen);
+    }
 
     // ------------------------------------------------------------------
     //                      PUBLIC VIEW FUNCTIONS
@@ -214,7 +277,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
 
     function getBTCPrice() public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeed[address(iBTC)]);
-        (, int256 answer,,,) = priceFeed.latestRoundData();
+        (, int256 answer,,,) = priceFeed.staleDataCheck();
         // Most USD pairs have 8 decimals, so we will assume they all do
         // We want to have everything in terms of wei, so we add 10 zeros at the end
         return ((uint256(answer) * ADDITIONAL_FEED_PRECISION)) / PRECISION;
@@ -247,5 +310,21 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         address owner = ownerOfPositionById[_id];
         require(owner != address(0), "Position does not exist!!!");
         return owner;
+    }
+
+    function setTradingFeePerMinute(uint256 _newFee) external onlyAdmin {
+        require(_newFee <= 100, "Fee too high"); // Max 0.1% per minute
+        tradingFeePerMinute = _newFee;
+    }
+
+    function getTradingFeePerMinute() external view returns (uint256) {
+        return tradingFeePerMinute;
+    }
+
+    function getPositionDuration(address _trader) external view returns (uint256) {
+        if (positionOpenTime[_trader] == 0) {
+            return 0;
+        }
+        return block.timestamp - positionOpenTime[_trader];
     }
 }

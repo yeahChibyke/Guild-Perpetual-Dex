@@ -18,7 +18,7 @@ library OracleChecker {
     // ------------------------------------------------------------------
     //                             STORAGE
     // ------------------------------------------------------------------
-    uint256 private constant s_TIMEOUT = 60 seconds;
+    uint256 private constant s_TIMEOUT = 10 minutes;
 
     // ------------------------------------------------------------------
     //                        INTERNAL FUNCTION
