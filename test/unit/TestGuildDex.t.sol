@@ -33,7 +33,7 @@ contract TestGuildDex is Test {
         gperp = new GuildPerp(address(usdc), address(wbtc), address(gtoken), priceFeed, address(gvault), admin);
     }
 
-    function testStuff() public view {
+    function test_get_price() public view {
         console2.log(gperp.getBTCPrice());
     }
 }
