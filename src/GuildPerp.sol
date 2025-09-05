@@ -218,7 +218,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         // Calculate leverage with proper precision
         // leverage = (size * PRECISION) / collateralAmount
         uint256 positionLeverage = (_size * PRECISION) / _collateralAmount;
-        
+
         // Check leverage bounds
         if (positionLeverage < MIN_LEVERAGE) {
             revert GP__LeverageTooLow();
@@ -356,14 +356,14 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     function getBTCPrice() public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeed[address(iBTC)]);
         (, int256 answer,,,) = priceFeed.staleDataCheck();
-        
+
         // Convert Chainlink price (8 decimals) to our standard (8 decimals for BTC price)
         return uint256(answer);
     }
 
     function calculatePnL(address _trader) public view notZeroAddress(_trader) returns (int256) {
         Position memory position = positions[_trader];
-        
+
         if (!position.exists) {
             return 0;
         }
@@ -375,11 +375,13 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         // Calculate PnL with proper precision
         // For long positions: PnL = (currentPrice - entryPrice) * (positionSize / entryPrice)
         // For short positions: PnL = (entryPrice - currentPrice) * (positionSize / entryPrice)
-        
+
         int256 priceDiff;
-        if (position.status) { // Long position
+        if (position.status) {
+            // Long position
             priceDiff = int256(currentBTCPrice) - int256(entryPrice);
-        } else { // Short position
+        } else {
+            // Short position
             priceDiff = int256(entryPrice) - int256(currentBTCPrice);
         }
 
@@ -430,7 +432,7 @@ contract GuildPerp is ReentrancyGuard, Ownable {
     // Calculate liquidation price for a position
     function getLiquidationPrice(address _trader) external view returns (uint256) {
         Position memory position = positions[_trader];
-        
+
         if (!position.exists) {
             return 0;
         }
@@ -438,15 +440,17 @@ contract GuildPerp is ReentrancyGuard, Ownable {
         // Liquidation occurs when losses equal the collateral
         // For long: liquidationPrice = entryPrice * (1 - collateral/size)
         // For short: liquidationPrice = entryPrice * (1 + collateral/size)
-        
+
         uint256 collateralRatio = (position.collateralAmount * PRICE_PRECISION) / position.size;
-        
-        if (position.status) { // Long position
+
+        if (position.status) {
+            // Long position
             if (collateralRatio >= PRICE_PRECISION) {
                 return 0; // Cannot be liquidated
             }
             return (position.entryPrice * (PRICE_PRECISION - collateralRatio)) / PRICE_PRECISION;
-        } else { // Short position
+        } else {
+            // Short position
             return (position.entryPrice * (PRICE_PRECISION + collateralRatio)) / PRICE_PRECISION;
         }
     }
