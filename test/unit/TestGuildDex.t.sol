@@ -46,8 +46,14 @@ contract TestGuildDex is Test {
 
         gtoken = new GuildToken(admin);
         gvault = new GuildVault(address(usdc), address(gtoken), admin);
-        gperp =
-            new GuildPerp(address(usdc), address(wbtc), address(gtoken), address(mockPriceFeed), address(gvault), admin);
+        gperp = new GuildPerp(
+            address(usdc),
+            address(wbtc),
+            address(gtoken),
+            address(mockPriceFeed),
+            address(gvault),
+            admin
+        );
 
         vm.startPrank(admin);
         gtoken.setVault(address(gvault));
@@ -103,6 +109,115 @@ contract TestGuildDex is Test {
         uint256 price = gperp.getBTCPrice();
         assertGt(price, 0);
         console2.log("BTC Price:", price);
+    }
+
+    // -----------------------------
+    // Liquidity tests (no contracts changed)
+    // -----------------------------
+
+    function test_vault_deposit_mintsSharesAndUpdatesAssets() public {
+        uint256 depositAmount = 100_000e6;
+
+        uint256 preAssets = gvault.getTotalAssets();
+        uint256 preShares = gtoken.balanceOf(alice);
+        uint256 expectedShares = gvault.convertToShares(depositAmount);
+
+        vm.startPrank(alice);
+        usdc.approve(address(gvault), depositAmount);
+        gvault.deposit(depositAmount);
+        vm.stopPrank();
+
+        // Shares minted should equal convertToShares quote
+        uint256 minted = gtoken.balanceOf(alice) - preShares;
+        assertEq(
+            minted,
+            expectedShares,
+            "shares minted != convertToShares amount"
+        );
+        // Vault assets increased by the deposit amount
+        assertEq(
+            gvault.getTotalAssets(),
+            preAssets + depositAmount,
+            "vault total assets not updated by deposit"
+        );
+    }
+
+    function test_vault_withdraw_revertsOnPartialSharesLessThanBalance()
+        public
+    {
+        uint256 depositAmount = 100_000e6;
+        uint256 withdrawShares = 40_000e6;
+
+        // Deposit
+        vm.startPrank(alice);
+        usdc.approve(address(gvault), depositAmount);
+        gvault.deposit(depositAmount);
+
+        // Partial withdraw should revert due to current validShares logic
+        vm.expectRevert(GuildVault.GV__InvalidShares.selector);
+        gvault.withdraw(withdrawShares);
+        vm.stopPrank();
+    }
+
+    function test_vault_withdraw_fullBalanceSucceedsWhenExtraLiquidityExists()
+        public
+    {
+        // Alice deposits 100k, Bob deposits 50k to ensure vault has headroom
+        uint256 preAssets = gvault.getTotalAssets();
+        vm.startPrank(alice);
+        usdc.approve(address(gvault), 100_000e6);
+        gvault.deposit(100_000e6);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        usdc.approve(address(gvault), 50_000e6);
+        gvault.deposit(50_000e6);
+        vm.stopPrank();
+
+        // Alice withdraws all her shares (equal to her balance)
+        uint256 aliceShares = gtoken.balanceOf(alice);
+        uint256 expectedAssets = gvault.convertToAssets(aliceShares);
+
+        vm.startPrank(alice);
+        gvault.withdraw(aliceShares);
+        vm.stopPrank();
+
+        // Vault assets reduced correctly and Alice shares burned
+        assertEq(
+            gvault.getTotalAssets(),
+            preAssets + 100_000e6 + 50_000e6 - expectedAssets,
+            "vault total assets incorrect after full withdraw"
+        );
+        assertEq(gtoken.balanceOf(alice), 0, "alice shares not burned");
+    }
+
+    function test_perp_onlyVault_guards() public {
+        // Non-vault callers cannot call supplyLiquidity / exitLiquidity
+        vm.startPrank(alice);
+        vm.expectRevert(GuildPerp.GP__NotAllowed.selector);
+        gperp.supplyLiquidity(1);
+
+        vm.expectRevert(GuildPerp.GP__NotAllowed.selector);
+        gperp.exitLiquidity(1);
+        vm.stopPrank();
+    }
+
+    function test_perp_liquidityAccounting_succeedsThenRevertsOnOverdraw()
+        public
+    {
+        // Act as the vault to exercise perp's liquidity counters directly
+        vm.startPrank(address(gvault));
+
+        // Drain all current liquidity
+        uint256 current = gperp.getTotalLiquidity();
+        assertGt(current, 0, "expected positive liquidity from setup");
+        gperp.exitLiquidity(current);
+
+        // Any further exit should revert as liquidity is 0
+        vm.expectRevert(GuildPerp.GP__InsufficientLiquidity.selector);
+        gperp.exitLiquidity(1);
+
+        vm.stopPrank();
     }
 
     function test_trading_allowed_by_default() public view {
@@ -177,7 +292,11 @@ contract TestGuildDex is Test {
 
         vm.stopPrank();
 
-        console2.log("Minimum leverage position opened:", position.leverage / 1e18, "x");
+        console2.log(
+            "Minimum leverage position opened:",
+            position.leverage / 1e18,
+            "x"
+        );
     }
 
     function test_open_position_max_leverage() public {
@@ -201,7 +320,11 @@ contract TestGuildDex is Test {
 
         vm.stopPrank();
 
-        console2.log("Maximum leverage position opened:", position.leverage / 1e18, "x");
+        console2.log(
+            "Maximum leverage position opened:",
+            position.leverage / 1e18,
+            "x"
+        );
     }
 
     // =============================================================
@@ -659,7 +782,10 @@ contract TestGuildDex is Test {
         uint256 finalBalance = usdc.balanceOf(alice);
         console2.log("Initial balance:", initialBalance);
         console2.log("Final balance:", finalBalance);
-        console2.log("Net change:", int256(finalBalance) - int256(initialBalance));
+        console2.log(
+            "Net change:",
+            int256(finalBalance) - int256(initialBalance)
+        );
 
         vm.stopPrank();
     }
